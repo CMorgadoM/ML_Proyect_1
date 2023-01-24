@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r options, echo = F, warning = F, message = F }
-knitr::opts_chunk$set(echo = F, warning = F, message = F)
+knitr::opts_chunk$set(echo = T, warning = F, message = F)
 ```
 
 ```{r packages}
@@ -120,7 +120,11 @@ registerDoSEQ()
 ```
 
 # 3: Estimated results
-## 3.1- Out-of-sample error
+## 3.1- Cross-Validation
+
+For this project I've created a validation set with the createDataPartition() function, splitting the original training data. The training set contains 70% of observations and the validation set 30%. In this new set I've predict the results and use the confusionMatrix() function to estimate the out-of-sample error.
+
+## 3.2- Out-of-sample error
 
 ```{r}
 validation_pca <- predict(pca1, validation)
@@ -151,7 +155,7 @@ conf_val$byClass %>%
 ```
 
 
-# 3.2- Predictions of the test set
+# 3.3- Predictions of the test set
 We finally use this model to predict the values from the test set. in order to do that we make the same transformations of the data set we did in the training and validation set and apply the same PCA of the training set to create the new variables in the test set.  
 ```{r}
 retirar <- data.frame("numero", "si_no")
@@ -183,5 +187,9 @@ testing_pca <- predict(pca1, test2)
 pred_test <- predict(model_1, testing_pca)
 ```
 
-After the pre Process, we run the model and get the estimations for the test set.
+After the pre Process, we run the model and get the estimations for the test set. The results are shown in the next chunk of code.
+```{r}
+pred_test
+```
+
 

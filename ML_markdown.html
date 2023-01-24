@@ -11,7 +11,7 @@
 
 <meta name="author" content="Cristóbal Morgado" />
 
-<meta name="date" content="2023-01-23" />
+<meta name="date" content="2023-01-24" />
 
 <title>Machine learning proyect: Usage of Random Forest to predict the classe variable with PCA</title>
 
@@ -577,11 +577,16 @@ display: none;
 <h1 class="title toc-ignore">Machine learning proyect: Usage of Random
 Forest to predict the classe variable with PCA</h1>
 <h4 class="author">Cristóbal Morgado</h4>
-<h4 class="date">2023-01-23</h4>
+<h4 class="date">2023-01-24</h4>
 
 </div>
 
 
+<pre class="r"><code>library(tidyverse)
+library(caret)
+library(doParallel)
+library(parallel)
+library(kableExtra)</code></pre>
 <div id="introduction" class="section level1">
 <h1>1: Introduction</h1>
 <p>This report aim is to create a ML model that correctly classify the
@@ -618,6 +623,39 @@ are giving no actual information to the model. I also have drooped the
 first 7 variables of the data set, since they are mostly metadata.</p>
 <p>Then I create a validation set to estimate the out-of-sample error in
 the next steps.</p>
+<pre class="r"><code>training &lt;- read.csv(&quot;pml-training.csv&quot;)
+testing &lt;- read.csv(&quot;pml-testing.csv&quot;)
+
+retirar &lt;- data.frame(row.names = c(&quot;numero&quot;,&quot;si_no&quot;))
+for(i in 1:dim(training)[2]){
+  t &lt;- as.numeric(table(is.na(training[,i]))[&quot;TRUE&quot;])
+  f &lt;- as.numeric(table(is.na(training[,i]))[&quot;FALSE&quot;])
+
+  na_percent &lt;- t/(t+f)
+  
+
+  if(is.na(na_percent)){
+    retirar[i,1] &lt;- i
+    retirar[i,2] &lt;- FALSE
+  } else if(na_percent &gt;= 0.8){
+    retirar[i,1] &lt;- i
+    retirar[i,2] &lt;- TRUE
+  } else {
+    retirar[i,1] &lt;- i
+    retirar[i,2] &lt;- FALSE
+  }
+}
+retirar &lt;- retirar[retirar$V2 == TRUE,1]
+train1 &lt;- training[,-retirar]
+
+# separar el set de entrenamiento y crear un set de validación, con el objetivo de obtener un estimado del error fuera de la muestra
+set.seed(1234)
+index &lt;- createDataPartition(training$classe,
+                             p=0.7,
+                             list = F)
+validation &lt;- train1[-index,]
+train1 &lt;- train1[index, ]
+train1 &lt;- train1[,-c(1:7, 93)]</code></pre>
 </div>
 <div id="pca" class="section level2">
 <h2>2.2- PCA</h2>
@@ -625,6 +663,15 @@ the next steps.</p>
 this variables to perform the model. I’ve set the preProces() function
 to get the 95% of variance, this create 25 PC. Finally we add the classe
 variable to the dataset and prepare to perform the model.</p>
+<pre class="r"><code># retirar primeras 7 variables pues no entregan información relevante
+# además se quita la variable classe para calcular los PCA
+# finalmente se calculan los PC
+train1 &lt;- train1[,-c(1:7, 93)]
+set.seed(1234)
+pca1 &lt;- preProcess(train1, method = &quot;pca&quot;)
+training_pca &lt;- predict(pca1, train1)
+training_pca &lt;- training_pca[,grepl(&quot;^PC&quot;, names(training_pca))]
+training_pca$classe &lt;- training[index, &quot;classe&quot;] # se agrega la variable dependiente</code></pre>
 </div>
 <div id="modelling" class="section level2">
 <h2>2.3- Modelling</h2>
@@ -636,14 +683,45 @@ the model should use. I’ve used K-fold cross-validation since is faster
 than the default method (bootstrap) with 5 folds, and used the
 doParallel and parallel packages to perform the model with the multiple
 cores of the processor.</p>
+<pre class="r"><code>cluster &lt;- makeCluster(detectCores()-1) # se deja uno libre para que el computador funcione
+registerDoParallel(cluster)
+
+fitControl &lt;- trainControl(method = &quot;cv&quot;,
+                           number = 5,
+                           allowParallel = T) # este objeto entrega a train() las preferencias con que debe calcular el modelo
+
+set.seed(1234)
+model_1 &lt;- train(classe~.,
+                 data = training_pca,
+                 method=&quot;rf&quot;,
+                 trControl = fitControl)
+
+stopCluster(cluster)
+registerDoSEQ() </code></pre>
 </div>
 </div>
 <div id="estimated-results" class="section level1">
 <h1>3: Estimated results</h1>
+<div id="cross-validation" class="section level2">
+<h2>3.1- Cross-Validation</h2>
+<p>For this project I’ve created a validation set with the
+createDataPartition() function, splitting the original training data.
+The training set contains 70% of observations and the validation set
+30%. In this new set I’ve predict the results and use the
+confusionMatrix() function to estimate the out-of-sample error.</p>
+</div>
 <div id="out-of-sample-error" class="section level2">
-<h2>3.1- Out-of-sample error</h2>
+<h2>3.2- Out-of-sample error</h2>
+<pre class="r"><code>validation_pca &lt;- predict(pca1, validation)
+pred_validation &lt;- predict(model_1, validation_pca)
+
+aux_2 &lt;- factor(training[-index, &quot;classe&quot;])
+conf_val &lt;- confusionMatrix(pred_validation, aux_2)</code></pre>
 <p>I’ve used the validation test to estimate the out of sample error,
 the model has an estimated error of 0.0229397.</p>
+<pre class="r"><code>conf_val$table %&gt;% 
+  kableExtra::kbl(caption = &quot;Confussion Matrix&quot;) %&gt;% 
+  kableExtra::kable_classic_2(lightable_options = c(&quot;striped&quot;, &quot;hover&quot;))</code></pre>
 <table class=" lightable-classic-2 lightable-striped lightable-hover" style="font-family: &quot;Arial Narrow&quot;, &quot;Source Sans Pro&quot;, sans-serif; margin-left: auto; margin-right: auto;">
 <caption>
 Confussion Matrix
@@ -772,6 +850,9 @@ E
 </tr>
 </tbody>
 </table>
+<pre class="r"><code>conf_val$overall %&gt;% 
+  kableExtra::kbl(caption = &quot;Overall Results&quot;) %&gt;% 
+  kableExtra::kable_classic_2(lightable_options = c(&quot;striped&quot;, &quot;hover&quot;))</code></pre>
 <table class=" lightable-classic-2 lightable-striped lightable-hover" style="font-family: &quot;Arial Narrow&quot;, &quot;Source Sans Pro&quot;, sans-serif; margin-left: auto; margin-right: auto;">
 <caption>
 Overall Results
@@ -844,6 +925,9 @@ McnemarPValue
 </tr>
 </tbody>
 </table>
+<pre class="r"><code>conf_val$byClass %&gt;% 
+  kableExtra::kbl(caption = &quot;Results by Class&quot;) %&gt;% 
+  kableExtra::kable_classic_2(lightable_options = c(&quot;striped&quot;, &quot;hover&quot;))</code></pre>
 <table class=" lightable-classic-2 lightable-striped lightable-hover" style="font-family: &quot;Arial Narrow&quot;, &quot;Source Sans Pro&quot;, sans-serif; margin-left: auto; margin-right: auto;">
 <caption>
 Results by Class
@@ -1083,13 +1167,43 @@ Class: E
 </div>
 </div>
 <div id="predictions-of-the-test-set" class="section level1">
-<h1>3.2- Predictions of the test set</h1>
+<h1>3.3- Predictions of the test set</h1>
 <p>We finally use this model to predict the values from the test set. in
 order to do that we make the same transformations of the data set we did
 in the training and validation set and apply the same PCA of the
 training set to create the new variables in the test set.</p>
+<pre class="r"><code>retirar &lt;- data.frame(&quot;numero&quot;, &quot;si_no&quot;)
+for(i in 1:dim(testing)[2]){
+  t &lt;- as.numeric(table(is.na(testing[,i]))[&quot;TRUE&quot;])
+  f &lt;- as.numeric(table(is.na(testing[,i]))[&quot;FALSE&quot;])
+  
+  na_percent &lt;- t/sum(t,f, na.rm = T)
+  
+  
+  if(is.na(na_percent)){
+    retirar[i,1] &lt;- i
+    retirar[i,2] &lt;- FALSE
+  } else if(na_percent &gt;= 0.8){
+    retirar[i,1] &lt;- i
+    retirar[i,2] &lt;- TRUE
+  } else {
+    retirar[i,1] &lt;- i
+    retirar[i,2] &lt;- FALSE
+  }
+}
+retirar &lt;- retirar[retirar$X.si_no. == TRUE,1]
+
+
+test2 &lt;- testing[,-as.numeric(retirar)]
+test2 &lt;- test2[,-c(1:7, 60)]
+testing_pca &lt;- predict(pca1, test2)
+
+pred_test &lt;- predict(model_1, testing_pca)</code></pre>
 <p>After the pre Process, we run the model and get the estimations for
-the test set.</p>
+the test set. The results are shown in the next chunk of code.</p>
+<pre class="r"><code>pred_test</code></pre>
+<pre><code>##  [1] B A A A A E D B A A A C B A E E A B B B
+## Levels: A B C D E</code></pre>
 </div>
 
 
